@@ -1,5 +1,8 @@
 using N_m3u8DL_RE.Common.Entity;
 using N_m3u8DL_RE.Common.Enum;
+using N_m3u8DL_RE.CommandLine;
+using N_m3u8DL_RE.Config;
+using N_m3u8DL_RE.DownloadManager;
 using N_m3u8DL_RE.Parser;
 using N_m3u8DL_RE.Parser.Config;
 using N_m3u8DL_RE.Parser.Processor.HLS;
@@ -18,6 +21,78 @@ namespace M3U8Box.Verify;
 /// </remarks>
 public static class Probe
 {
+    /// <summary>
+    /// Touches the download engine, not just the parsers.
+    /// </summary>
+    /// <remarks>
+    /// This is the assertion that matters most. The engine project is an
+    /// <c>OutputType=Exe</c> wired to <c>System.CommandLine</c> upstream, and
+    /// <see cref="SimpleDownloadManager"/>, <see cref="DownloaderConfig"/>, and
+    /// <see cref="MyOption"/> are all <c>internal</c>. Naming them from an
+    /// external assembly compiles only if the upstream rewrite in
+    /// <c>scripts/prepare-upstream.sh</c> did its job, so this method doubles
+    /// as the regression test for that script.
+    ///
+    /// Nothing is downloaded. The manager is only constructed against an empty
+    /// stream list, which is enough to force the linker to keep the whole
+    /// download graph alive through the AOT pass.
+    /// </remarks>
+    public static void TouchDownloadEngine(string workDir)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(workDir);
+
+        var option = new MyOption
+        {
+            Input = "https://example.invalid/probe.m3u8",
+            SaveName = "probe",
+            TmpDir = workDir,
+            SaveDir = workDir,
+
+            // Android has no ffmpeg and no terminal. BinaryMerge bypasses ffmpeg
+            // by concatenating decrypted segments directly, which is the only
+            // merge mode that can work without bundling a native binary.
+            BinaryMerge = true,
+            MuxAfterDone = false,
+            SkipMerge = false,
+
+            // The app supplies its own headers; no log file, since upstream's
+            // logger resolves a path from Environment.ProcessPath, which is null
+            // on Android.
+            NoLog = true,
+            WriteMetaJson = false,
+            DelAfterDone = false,
+        };
+
+        // ForceAnsiConsole stays off so Spectre.Console is never asked to render
+        // to a terminal that does not exist.
+        option.ForceAnsiConsole = false;
+        option.NoAnsiColor = true;
+
+        var config = new DownloaderConfig
+        {
+            MyOptions = option,
+            DirPrefix = workDir,
+            Headers = new Dictionary<string, string>
+            {
+                ["user-agent"] = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36",
+            },
+        };
+
+        // An empty selection: constructed, never started. The goal is
+        // reachability, not execution.
+        //
+        // SimpleDownloadManager does not implement IDisposable upstream, so it
+        // must not be wrapped in `using`.
+        using var extractor = new StreamExtractor(new ParserConfig { Url = option.Input });
+        var selected = new List<N_m3u8DL_RE.Common.Entity.StreamSpec>();
+        var manager = new SimpleDownloadManager(config, selected, extractor);
+        _ = manager;
+
+        // Clone() is what the app uses to derive a per-task option copy, and it
+        // is internal upstream.
+        _ = option.Clone();
+    }
+
     /// <summary>
     /// Runs every upstream touch point. Called from <see cref="MainActivity"/>
     /// so the linker sees it as reachable from a real Android entry point.
