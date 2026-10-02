@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <AndroidApplication>true</AndroidApplication>
+
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationId>com.wumingzhinu.m3u8box</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
+
+    <!--
+      Native AOT stays off. ILCompiler on the .NET 9 band has no Android target
+      ("Target OS 'android' is not supported"), so this ships the shared Mono
+      runtime, as the probe established.
+    -->
+    <PublishAot>false</PublishAot>
+    <AndroidLinkMode>None</AndroidLinkMode>
+
+    <!--
+      Debug builds must keep assertable, non-stripped logging. Overriding
+      Release settings here is deliberate: the whole point of this app is to
+      report download progress, and an aggressive trim can strip the very
+      callbacks that surface it. Revisit with a linker descriptor if size
+      becomes a problem.
+    -->
+    <AndroidCreateResourceDesigner>true</AndroidCreateResourceDesigner>
+
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\third_party\N_m3u8DL-RE\src\N_m3u8DL-RE.Common\N_m3u8DL-RE.Common.csproj" />
+    <ProjectReference Include="..\..\third_party\N_m3u8DL-RE\src\N_m3u8DL-RE.Parser\N_m3u8DL-RE.Parser.csproj" />
+    <ProjectReference Include="..\..\third_party\N_m3u8DL-RE\src\N_m3u8DL-RE\N_m3u8DL-RE.csproj" />
+  </ItemGroup>
+
+</Project>
