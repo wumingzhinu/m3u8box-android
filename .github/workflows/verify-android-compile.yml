@@ -238,7 +238,9 @@ jobs:
           [ "$count" -gt 0 ] || { echo "::error::no upstream project retargeted"; exit 1; }
 
       - name: Prepare upstream engine for library use
-        run: ./scripts/prepare-upstream.sh
+        run: |
+          chmod +x scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
