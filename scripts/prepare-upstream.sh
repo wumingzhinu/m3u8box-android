@@ -64,6 +64,40 @@ else
   note "engine: CLI front end removed (Program.cs, CommandInvoker, PowerShellCompletionAction)"
 fi
 
+# MyOption is annotated with roughly a hundred <see cref="CommandInvoker.X"/>
+# doc comments. Once CommandInvoker is gone those crefs no longer resolve, and
+# an unresolvable cref is a warning today but breaks documentation builds and
+# obscures real diagnostics. Rewrite the cref target to MyOption's own member so
+# the references stay meaningful.
+#
+# Only crefs whose target actually lives on MyOption are rewritten; anything
+# else is reduced to plain text rather than left dangling.
+if [ -f "${ENGINE}/CommandLine/MyOption.cs" ]; then
+  crefs=$(grep -c 'cref="CommandInvoker\.' "${ENGINE}/CommandLine/MyOption.cs" || true)
+  if [ "$crefs" -gt 0 ]; then
+    # Python because sed -E does not expand \1 in the replacement, which
+    # previously wrote a literal "$1" into every one of these doc comments.
+    python3 - "${ENGINE}/CommandLine/MyOption.cs" <<'PYEOF'
+import re, sys
+p = sys.argv[1]
+src = open(p, encoding="utf-8-sig").read()
+out, n = re.subn(r'cref="CommandInvoker\.([A-Za-z0-9_]+)"',
+                 lambda m: 'cref="@MyOption.%s"' % m.group(1), src)
+if n:
+    open(p, "w", encoding="utf-8").write(out)
+PYEOF
+    note "MyOption: rewrote $crefs CommandInvoker cref(s) to @MyOption"
+  fi
+  if grep -q 'cref="CommandInvoker\.' "${ENGINE}/CommandLine/MyOption.cs"; then
+    die "MyOption: CommandInvoker crefs survived the rewrite"
+  fi
+  # The literal "$1" is the specific failure mode worth guarding: it is valid
+  # text, so nothing downstream complains until the docs are read.
+  if grep -q 'cref="@MyOption\.\$1"' "${ENGINE}/CommandLine/MyOption.cs"; then
+    die "MyOption: cref rewrite wrote a literal \$1 instead of the member name"
+  fi
+fi
+
 # EmbeddedResource for the completion script lives in a now-missing file.
 sed -i '/PowerShellCompletion\.ps1/d' "$CSPROJ"
 
@@ -90,14 +124,61 @@ promote() {
     die "$label: file not found: $file"
     return
   fi
-  local before
-  before=$(grep -c "$pattern" "$file" || true)
-  if [ "$before" -eq 0 ]; then
+
+  # Done in Python rather than sed. Two earlier attempts with sed both failed
+  # silently:
+  #   * `^` was used as a literal marker for a line-start anchor. In a regex it
+  #     is an anchor, so sed replaced the empty position at line start and left
+  #     "^internal class MyOption" behind, yielding "public ^internal class
+  #     MyOption" and CS0116.
+  #   * after stripping the caret, the capture group was interpolated into the
+  #     replacement without sed expanding \1, producing a literal "$1".
+  #
+  # A regex with Python's re.sub is unambiguous: pattern is an ERE anchored at
+  # line start, and the group is substituted correctly.
+  local count
+  count=$(python3 - "$file" "$pattern" <<'PYEOF'
+import re, sys
+path, pattern = sys.argv[1], sys.argv[2]
+pat = pattern[:-1] if pattern.endswith("$") else pattern
+lines = open(path, encoding="utf-8-sig").read().splitlines(keepends=True)
+
+# Only the declaration line matching the pattern is touched, and only the first
+# "internal" token on it.
+#
+# Two mistakes avoided here. A blanket re.subn over r'^(\s*)internal\b' would
+# also rewrite members *inside* the class, silently widening far more than
+# intended. And emitting "public " + whole_match would produce
+# "public internal partial class Foo" -- legal C#, so it would compile, but
+# wrong and confusing to read.
+hit = 0
+for i, line in enumerate(lines):
+    if re.search(pat, line):
+        new, n = re.subn(r'\binternal\b', 'public', line, count=1)
+        if n:
+            lines[i] = new
+            hit += 1
+if hit:
+    open(path, "w", encoding="utf-8").writelines(lines)
+print(hit)
+PYEOF
+) || { die "$label: rewrite failed for $file"; return; }
+
+  if [ "${count:-0}" -eq 0 ]; then
     die "$label: expected to find /$pattern/ in $file but found none"
     return
   fi
-  sed -i "s|$pattern|public ${pattern}|" "$file"
-  note "$label: promoted $before declaration(s) to public"
+
+  # Verify rather than trust. "public internal" is legal and would compile while
+  # being wrong; "^internal" and "public public" are outright broken. All are
+  # cheaper to catch here than in a compiler error far away.
+  if grep -qE '\^internal|public public|public internal|public \^' "$file"; then
+    die "$label: malformed result in $file (caret, doubled, or 'public internal' modifier)"
+  fi
+  if ! grep -qE '^\s*public (partial |static |sealed |abstract )*class' "$file"; then
+    die "$label: $file has no top-level 'public class' after rewrite"
+  fi
+  note "$label: promoted $count declaration(s) to public"
 }
 
 # MyOption is a plain POCO despite living in the CommandLine namespace; it does
