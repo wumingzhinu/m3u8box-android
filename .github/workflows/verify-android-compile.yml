@@ -53,6 +53,29 @@ jobs:
           dotnet workload install android
           dotnet workload list
 
+      # A Directory.Build.props condition that fails to match is indistinguishable
+      # from a successful one: MSBuild just leaves the property alone. Assert the
+      # override actually applied before building, so a silent no-op surfaces here
+      # rather than as a confusing NU1201 much later.
+      - name: Assert TFM override took effect
+        run: |
+          set -euo pipefail
+          for p in Common Parser; do
+            csproj="third_party/N_m3u8DL-RE/src/N_m3u8DL-RE.${p}/N_m3u8DL-RE.${p}.csproj"
+            echo "--- $p ---"
+            dotnet msbuild "$csproj" -getProperty:TargetFramework -getProperty:LangVersion
+          done
+          # Fail loudly if either project is still on net10.0.
+          for p in Common Parser; do
+            csproj="third_party/N_m3u8DL-RE/src/N_m3u8DL-RE.${p}/N_m3u8DL-RE.${p}.csproj"
+            tfm=$(dotnet msbuild "$csproj" -getProperty:TargetFramework | tr -d '\r' | tail -1)
+            if [ "$tfm" != "net9.0" ]; then
+              echo "::error::Directory.Build.props did not retarget $p (got '$tfm', want 'net9.0')"
+              exit 1
+            fi
+            echo "OK $p -> $tfm"
+          done
+
       - name: Build probe
         working-directory: verify/Probe
         run: |
