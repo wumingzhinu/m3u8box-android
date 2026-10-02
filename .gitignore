@@ -1,0 +1,26 @@
+# Upstream clone, fetched by CI at the commit in .nre-pin
+/third_party/
+
+# .NET build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+*.userprefs
+
+# Android
+*.apk
+*.aab
+*.apks
+*.keystore
+local.properties
+*.jks
+
+# Tooling
+.vs/
+.vscode/
+.idea/
+*.swp
+.DS_Store

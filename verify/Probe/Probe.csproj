@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      This is the single question the probe answers: does upstream's
+      Common + Parser compile cleanly for net9.0-android, and does the
+      Android AOT ILCompiler accept the resulting assembly?
+
+      Use a library TFM rather than an app TFM so the probe stays fast and
+      does not need an Activity, manifest, or Android SDK beyond the
+      workload. A separate app target is spun up only after this passes.
+    -->
+    <TargetFramework>net9.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>21</SupportedOSPlatformVersion>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Surfaces Android-unsupported API usage as warnings, not errors, so
+         the probe reports problems without failing the build outright. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\third_party\N_m3u8DL-RE\src\N_m3u8DL-RE.Common\N_m3u8DL-RE.Common.csproj" />
+    <ProjectReference Include="..\..\third_party\N_m3u8DL-RE\src\N_m3u8DL-RE.Parser\N_m3u8DL-RE.Parser.csproj" />
+  </ItemGroup>
+
+</Project>

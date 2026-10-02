@@ -1,0 +1,115 @@
+name: verify-android-compile
+
+# Feasibility probe. Answers exactly one question: can N_m3u8DL-RE's Common and
+# Parser projects be compiled for net9.0-android with AOT? Nothing is packaged
+# yet. If this workflow passes, the app work can proceed on solid ground; if it
+# fails, the blocker is known before any app code is written.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: '9.0'
+  NRE_REPO: https://github.com/nilaoda/N_m3u8DL-RE.git
+
+jobs:
+  probe:
+    name: net9.0-android + AOT
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read pinned upstream commit
+        id: pin
+        run: |
+          PIN=$(grep -oE '[0-9a-f]{40}' .nre-pin)
+          echo "commit=$PIN" >> "$GITHUB_OUTPUT"
+          echo "Pinned N_m3u8DL-RE commit: $PIN"
+
+      # Cloned in CI rather than vendored or referenced as a submodule.
+      # A pinned explicit commit keeps builds reproducible, and it avoids the
+      # shallow-clone fetch-pack failures that submodule adds hit on some hosts.
+      - name: Clone N_m3u8DL-RE at pinned commit
+        run: |
+          git clone --filter=blob:none --no-checkout "$NRE_REPO" third_party/N_m3u8DL-RE
+          git -C third_party/N_m3u8DL-RE fetch --depth 1 origin "${{ steps.pin.outputs.commit }}"
+          git -C third_party/N_m3u8DL-RE checkout --detach "${{ steps.pin.outputs.commit }}"
+          test -f third_party/N_m3u8DL-RE/src/N_m3u8DL-RE.Parser/N_m3u8DL-RE.Parser.csproj
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Install Android workload
+        run: |
+          dotnet workload install android
+          dotnet workload list
+
+      - name: Build probe
+        working-directory: verify/Probe
+        run: |
+          set -o pipefail
+          dotnet build -c Release -v normal 2>&1 | tee build.log
+
+      # A plain build is not sufficient evidence for an AOT claim: it does not
+      # run the ILCompiler pass that actually trips on unsupported patterns and
+      # trimming. The probe therefore publishes, which drives the AOT step.
+      - name: Publish probe with AOT
+        working-directory: verify/Probe
+        run: |
+          set -o pipefail
+          dotnet publish -c Release \
+            -r android-arm64 \
+            -p:AndroidPackageFormat=apk \
+            -p:PublishAot=true \
+            -p:AndroidLinkMode=SdkOnly \
+            -v normal 2>&1 | tee publish.log
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "### Probe result"
+            echo
+            echo "- pinned upstream: \`${{ steps.pin.outputs.commit }}\`"
+            echo "- target: \`net9.0-android\`"
+            echo "- runtime identifier: \`android-arm64\`"
+            echo
+            echo "Warnings that are expected and non-fatal:"
+            echo "- \`CA1416\` platform-compatibility warnings, from upstream probing"
+            echo "  Windows/Linux/macOS APIs; NoWarn'd in the probe project."
+            echo "- \`Spectre.Console\` reaching for a terminal. Android has none,"
+            echo "  so its console renderer degrades. Tracked in README."
+            echo
+            echo "Artifacts:"
+          } >> "$GITHUB_STEP_SUMMARY"
+          ls -la verify/Probe/bin/Release/net9.0-android/*/publish 2>/dev/null \
+            | tee -a "$GITHUB_STEP_SUMMARY" || echo "no publish output found" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload build and publish logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-logs
+          path: |
+            verify/Probe/build.log
+            verify/Probe/publish.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload probe APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-apk
+          path: verify/Probe/bin/Release/net9.0-android/*/publish/*.apk
+          if-no-files-found: warn
+          retention-days: 14

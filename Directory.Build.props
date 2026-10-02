@@ -1,0 +1,27 @@
+<Project>
+
+  <!--
+    Retarget the cloned upstream tree from net10.0 to net9.0.
+
+    Upstream N_m3u8DL-RE targets net10.0, but .NET for Android is only
+    dependable up to net9.0-android. A Directory.Build.props in the root of a
+    tree applies to every project beneath it, so this overrides
+    third_party/N_m3u8DL-RE without patching a single upstream file.
+
+    Scope is deliberately restricted via $(MSBuildProjectDirectory) to the
+    upstream tree. Setting TargetFramework unconditionally here would also
+    clobber our own projects, because Directory.Build.props is imported at the
+    very top of every project file, before the project's own
+    <TargetFramework> is read.
+
+    LangVersion is pinned to 13 to match upstream. 14 enables first-class span
+    overloads, which silently changes method resolution against
+    MemoryExtensions.Contains and can break upstream code that otherwise
+    compiles fine.
+  -->
+  <PropertyGroup Condition="$(MSBuildProjectDirectory.Contains('third_party'))">
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>13.0</LangVersion>
+  </PropertyGroup>
+
+</Project>
