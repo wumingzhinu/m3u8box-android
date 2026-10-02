@@ -2,32 +2,19 @@
 
   <PropertyGroup>
     <!--
-      Exe, not Library.
+      Exe + AndroidApplication, not a library.
 
-      A library does not produce a native entry point, so ILCompiler emits no
-      .so and the publish step fails with MSB3030 ("Could not copy Probe.so").
-      A library build compiles but never reaches the code-generation pass, so it
-      proves less than it appears to.
-
-      Reachability comes from MainActivity calling Probe.RunAll.
-    -->
-    <TargetFramework>net9.0-android</TargetFramework>
-    <SupportedOSPlatformVersion>21</SupportedOSPlatformVersion>
-    <OutputType>Exe</OutputType>
-
-    <!--
-      Required, and the reason is not obvious. Without this the project is a
-      plain .NET library-shaped project, and ILCompiler fails with:
+      A library has no native entry point, so ILCompiler emits no .so. A
+      library-shaped project also fails with:
 
         error : The PrivateSdkAssemblies ItemGroup is required for
                 _ComputeAssembliesToCompileToNative
 
-      PrivateSdkAssemblies is populated only by the Android *application*
-      targets. Setting OutputType=Exe alone is not enough; the project has to be
-      an Android app. Pinning the SDK band (global.json) was tried first on the
-      theory that a 10.x SDK paired with a 9.x ILCompiler caused it, and that
-      theory was wrong: the error survived SDK 9.0.318 with ILCompiler 9.0.20.
+      because only the Android *application* targets populate that group.
     -->
+    <TargetFramework>net9.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>21</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
     <AndroidApplication>true</AndroidApplication>
 
     <Nullable>enable</Nullable>
@@ -37,19 +24,42 @@
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
 
     <!--
-      AOT lives here rather than on the publish command line so `dotnet build`
-      exercises the same configuration as `dotnet publish`. The probe's whole
-      purpose is to prove the native compile works, and passing -p:PublishAot
-      only to the publish step would let Build go green while AOT was never
-      attempted.
-    -->
-    <PublishAot>true</PublishAot>
-    <AndroidLinkMode>SdkOnly</AndroidLinkMode>
+      Native AOT is off, and that is a finding rather than a compromise.
 
-    <!-- Android has no terminal, so Spectre.Console cannot render. Upstream
-         routes all logging through it, so probe against the Android-safe
-         writer rather than silencing the whole category; real behaviour is
-         decided once the app exists. -->
+      With PublishAot=true the Android build invokes ILCompiler directly, which
+      aborts on .NET 9:
+
+        Unhandled exception. System.CommandLine.CommandLineException:
+        Target OS 'android' is not supported
+          at ILCompiler.Program.Main(String[] args)
+
+      ILCompiler on the .NET 9 band has no Android target OS, so AndroidLinkMode
+      SdkOnly cannot work regardless of configuration. A native-AOT Android app
+      is simply not available on this band.
+
+      AndroidLinkMode=None ships the shared Mono runtime inside the APK instead.
+      This is the same deployment .NET for Android uses by default, it is fully
+      supported, and it costs roughly 20-40 MB of extra package size. Since the
+      upstream engine already pulls in Spectre.Console and a full
+      System.Net/System.Text.Json surface, the size difference is not decisive
+      here.
+
+      Revisit only if a later band adds an Android AOT target.
+    -->
+    <PublishAot>false</PublishAot>
+    <AndroidLinkMode>None</AndroidLinkMode>
+
+    <!--
+      Satellites: upstream localises into zh-CN/zh-TW/en-US via
+      SatelliteResourceLanguages. On Android only English resources are packaged
+      anyway, and trimming the others avoids carrying unused resources.
+    -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+
+    <!-- Android has no terminal, so Spectre.Console cannot render; upstream
+         routes all logging through it. CA1416 is the platform-compatibility
+         analyser complaining about upstream's Windows/Linux API probing, which
+         is guarded at runtime. -->
     <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>
 
