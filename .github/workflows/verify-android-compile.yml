@@ -13,7 +13,6 @@ permissions:
   contents: read
 
 env:
-  DOTNET_VERSION: '9.0'
   NRE_REPO: https://github.com/nilaoda/N_m3u8DL-RE.git
 
 jobs:
@@ -43,14 +42,30 @@ jobs:
           git -C third_party/N_m3u8DL-RE checkout --detach "${{ steps.pin.outputs.commit }}"
           test -f third_party/N_m3u8DL-RE/src/N_m3u8DL-RE.Parser/N_m3u8DL-RE.Parser.csproj
 
+      # The SDK and the android workload must be from the same major band.
+      #
+      # An earlier run installed the 9.0 SDK but the runner resolved commands
+      # through 10.0.401, which paired a 10.x SDK with a 10.x android workload
+      # while still pulling ILCompiler 9.0.20. The mismatch left the
+      # PrivateSdkAssemblies target unmet and AOT failed with:
+      #   "The PrivateSdkAssemblies ItemGroup is required for
+      #    _ComputeAssembliesToCompileToNative"
+      # global.json pins the SDK band so SDK, workload, and ILCompiler agree.
+      - name: Show SDK band
+        run: |
+          dotnet --version
+          cat global.json
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
+          global-json-file: global.json
 
       - name: Install Android workload
         run: |
           dotnet workload install android
+          echo "--- resolved ---"
+          dotnet --version
           dotnet workload list
 
       # Retarget upstream to net9.0 in two independent ways.
