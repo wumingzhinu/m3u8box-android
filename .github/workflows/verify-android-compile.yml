@@ -68,59 +68,69 @@ jobs:
           dotnet --version
           dotnet workload list
 
-      # Retarget upstream to net9.0 in two independent ways.
+      # Retarget every upstream project to net9.0.
+      #
+      # Discovered by glob, not a hardcoded list. An earlier revision named only
+      # Common and Parser, so when the engine library was added it kept net10.0
+      # and the build failed with NETSDK1045. Enumerating directories means a new
+      # project cannot be silently missed again.
       #
       # The sed rewrite is the authoritative mechanism. Directory.Build.props
       # cannot be relied on for this: its Condition is evaluated with the
       # project directory, and getting that expression wrong fails silently
-      # rather than erroring, which already cost one failed run. An explicit
-      # rewrite of two known lines is deterministic and reviewable.
-      #
-      # Directory.Build.props is kept as a second line of defence so the tree
-      # still restores itself if a future upstream commit changes the TFM to
-      # something other than the exact net10.0 string matched here.
+      # rather than erroring, which already cost one failed run.
       - name: Retarget upstream to net9.0
         run: |
           set -euo pipefail
-          for p in Common Parser; do
-            csproj="third_party/N_m3u8DL-RE/src/N_m3u8DL-RE.${p}/N_m3u8DL-RE.${p}.csproj"
-            before=$(grep -c '<TargetFramework>net10.0</TargetFramework>' "$csproj" || true)
-            if [ "$before" -ne 1 ]; then
-              echo "::error::$p: expected exactly one net10.0 TFM, found $before"
-              exit 1
+          count=0
+          for csproj in third_party/N_m3u8DL-RE/src/*/*.csproj; do
+            [ -e "$csproj" ] || continue
+            if grep -q '<TargetFramework>net10.0</TargetFramework>' "$csproj"; then
+              sed -i 's|<TargetFramework>net10.0</TargetFramework>|<TargetFramework>net9.0</TargetFramework>|' "$csproj"
+              echo "retargeted $(basename "$csproj")"
+              count=$((count + 1))
             fi
-            sed -i 's|<TargetFramework>net10.0</TargetFramework>|<TargetFramework>net9.0</TargetFramework>|' "$csproj"
-            echo "retargeted $p:"
-            grep -n 'TargetFramework' "$csproj"
           done
+          echo "retargeted $count project(s)"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::no upstream project was retargeted; upstream TFM likely changed"
+            exit 1
+          fi
+          echo "--- verify none left on net10.0 ---"
+          if grep -l 'net10.0' third_party/N_m3u8DL-RE/src/*/*.csproj; then
+            echo "::error::some upstream projects are still on net10.0"
+            exit 1
+          fi
+          grep -H 'TargetFramework' third_party/N_m3u8DL-RE/src/*/*.csproj
 
       # A retarget that silently failed once already (a Directory.Build.props
       # condition that never matched), and the resulting NU1201 was far from the
-      # cause. Keep a cheap assertion, but read it from the project file itself
-      # rather than from `msbuild -pp`.
+      # cause. Keep a cheap assertion, but read it from the project files
+      # themselves rather than from `msbuild -pp`.
       #
       # `-pp` was tried first and rejected: its dump ends with literal
       # `$(TargetFramework)` placeholders from imported conditional blocks, so
       # "last assignment wins" picks up a placeholder instead of the resolved
       # value. `-getProperty` is not available on the .NET 9 SDK. The project
-      # file is the single source of truth here anyway, since the retarget step
-      # above rewrites it directly.
+      # files are the single source of truth here, since the retarget step
+      # above rewrites them directly.
       - name: Assert TFM override took effect
         run: |
           set -uo pipefail
           fail=0
-          for p in Common Parser; do
-            csproj="third_party/N_m3u8DL-RE/src/N_m3u8DL-RE.${p}/N_m3u8DL-RE.${p}.csproj"
-            echo "--- $p ---"
+          for csproj in third_party/N_m3u8DL-RE/src/*/*.csproj; do
+            [ -e "$csproj" ] || continue
+            name=$(basename "$csproj")
+            echo "--- $name ---"
             grep -n 'TargetFramework' "$csproj" || true
             if grep -q '<TargetFramework>net10.0</TargetFramework>' "$csproj"; then
-              echo "::error::$p is still on net10.0"
+              echo "::error::$name is still on net10.0"
               fail=1
             elif ! grep -q '<TargetFramework>net9.0</TargetFramework>' "$csproj"; then
-              echo "::error::$p has no net9.0 TargetFramework"
+              echo "::error::$name has no net9.0 TargetFramework"
               fail=1
             else
-              echo "OK $p -> net9.0"
+              echo "OK $name -> net9.0"
             fi
           done
           exit $fail
