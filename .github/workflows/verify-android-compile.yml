@@ -125,6 +125,14 @@ jobs:
           done
           exit $fail
 
+      # Rewrite the engine so it can be consumed as a library. Every edit is
+      # asserted inside the script; a silent no-op here would surface much later
+      # as an incomprehensible accessibility or missing-type error.
+      - name: Prepare upstream engine for library use
+        run: |
+          chmod +x scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
+
       - name: Build probe
         working-directory: verify/Probe
         run: |
