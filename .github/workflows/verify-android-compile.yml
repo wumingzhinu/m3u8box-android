@@ -79,14 +79,17 @@ jobs:
             grep -n 'TargetFramework' "$csproj"
           done
 
-      # A Directory.Build.props condition that fails to match is indistinguishable
-      # from a successful one: MSBuild just leaves the property alone. Assert the
-      # override actually applied before building, so a silent no-op surfaces here
-      # rather than as a confusing NU1201 much later.
+      # A retarget that silently failed once already (a Directory.Build.props
+      # condition that never matched), and the resulting NU1201 was far from the
+      # cause. Keep a cheap assertion, but read it from the project file itself
+      # rather than from `msbuild -pp`.
       #
-      # Uses `msbuild -pp` (preprocess) rather than `-getProperty`, which is not
-      # available on the .NET 9 SDK. `-pp` evaluates imports and conditions, so the
-      # resolved TargetFramework appears in the dumped project and can be grepped.
+      # `-pp` was tried first and rejected: its dump ends with literal
+      # `$(TargetFramework)` placeholders from imported conditional blocks, so
+      # "last assignment wins" picks up a placeholder instead of the resolved
+      # value. `-getProperty` is not available on the .NET 9 SDK. The project
+      # file is the single source of truth here anyway, since the retarget step
+      # above rewrites it directly.
       - name: Assert TFM override took effect
         run: |
           set -uo pipefail
@@ -94,18 +97,12 @@ jobs:
           for p in Common Parser; do
             csproj="third_party/N_m3u8DL-RE/src/N_m3u8DL-RE.${p}/N_m3u8DL-RE.${p}.csproj"
             echo "--- $p ---"
-            out="preprocessed-${p}.xml"
-            if ! dotnet msbuild "$csproj" -pp:"$out" -nologo >/dev/null 2>&1; then
-              echo "::error::msbuild -pp failed for $p"
+            grep -n 'TargetFramework' "$csproj" || true
+            if grep -q '<TargetFramework>net10.0</TargetFramework>' "$csproj"; then
+              echo "::error::$p is still on net10.0"
               fail=1
-              continue
-            fi
-            # The last TargetFramework assignment in evaluation order wins.
-            tfm=$(grep -oE '<TargetFramework>[^<]+</TargetFramework>' "$out" | tail -1 \
-                  | sed -E 's|</?TargetFramework>||g')
-            echo "resolved TargetFramework: ${tfm:-<none>}"
-            if [ "$tfm" != "net9.0" ]; then
-              echo "::error::$p did not resolve to net9.0 (got '${tfm:-none}')"
+            elif ! grep -q '<TargetFramework>net9.0</TargetFramework>' "$csproj"; then
+              echo "::error::$p has no net9.0 TargetFramework"
               fail=1
             else
               echo "OK $p -> net9.0"
