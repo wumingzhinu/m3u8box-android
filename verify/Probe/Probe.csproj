@@ -66,6 +66,16 @@
   <ItemGroup>
     <ProjectReference Include="..\..\third_party\N_m3u8DL-RE\src\N_m3u8DL-RE.Common\N_m3u8DL-RE.Common.csproj" />
     <ProjectReference Include="..\..\third_party\N_m3u8DL-RE\src\N_m3u8DL-RE.Parser\N_m3u8DL-RE.Parser.csproj" />
+    <!--
+      The engine library, not just the parsers.
+
+      This is the reference that actually proves the upstream rewrite worked.
+      SimpleDownloadManager, DownloaderConfig, and MyOption are all `internal`
+      upstream, and the engine project is an Exe wired to System.CommandLine, so
+      this single ProjectReference only compiles if scripts/prepare-upstream.sh
+      promoted those types and severed the CLI dependency.
+    -->
+    <ProjectReference Include="..\..\third_party\N_m3u8DL-RE\src\N_m3u8DL-RE\N_m3u8DL-RE.csproj" />
   </ItemGroup>
 
 </Project>
