@@ -8,18 +8,25 @@
     tree applies to every project beneath it, so this overrides
     third_party/N_m3u8DL-RE without patching a single upstream file.
 
-    Scope is deliberately restricted via $(MSBuildProjectDirectory) to the
-    upstream tree. Setting TargetFramework unconditionally here would also
-    clobber our own projects, because Directory.Build.props is imported at the
-    very top of every project file, before the project's own
-    <TargetFramework> is read.
+    Scope is deliberately restricted to the third_party tree. Setting
+    TargetFramework unconditionally here would also clobber our own projects,
+    because Directory.Build.props is imported at the very top of every project
+    file, before the project's own <TargetFramework> is read.
+
+    The condition compares against $(MSBuildThisFileDirectory) (this file's own
+    directory, with a trailing slash) using StartsWith. An earlier attempt used
+    $(MSBuildProjectDirectory).Contains('third_party'), which silently
+    evaluated to false: Contains is not an MSBuild property function, so the
+    condition never matched and upstream stayed on net10.0. MSBuild's built-in
+    string methods are limited to StartsWith/EndsWith/HasExtension, and those
+    do work here.
 
     LangVersion is pinned to 13 to match upstream. 14 enables first-class span
     overloads, which silently changes method resolution against
     MemoryExtensions.Contains and can break upstream code that otherwise
     compiles fine.
   -->
-  <PropertyGroup Condition="$(MSBuildProjectDirectory.Contains('third_party'))">
+  <PropertyGroup Condition="$(MSBuildProjectDirectory.StartsWith('$(MSBuildThisFileDirectory)third_party'))">
     <TargetFramework>net9.0</TargetFramework>
     <LangVersion>13.0</LangVersion>
   </PropertyGroup>
