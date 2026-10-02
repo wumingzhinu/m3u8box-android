@@ -236,23 +236,81 @@ promote "${ENGINE}/DownloadManager/SimpleDownloadManager.Parts.cs" \
 #   error CS0053: property type 'SubtitleFormat' ...
 #
 # LogLevel, CustomHlsScope, and EncryptMethod need no change: they already live
-# in N_m3u8DL-RE.Common and are public.
+# in N_m3u8DL-RE.Common and are public. The engine-assembly ones are handled
+# wholesale in the next step rather than one at a time.
 # ---------------------------------------------------------------------------
-promote_anywhere() {
-  local name="$1" label="$2"
-  local file
-  file=$(grep -rlE "^(internal|public)[^/]*(class|enum|record|struct) ${name}\b" \
-           --include='*.cs' "${ENGINE}" 2>/dev/null | head -1)
-  if [ -z "$file" ]; then
-    die "$label: could not locate type $name under ${ENGINE}"
-    return
-  fi
-  promote "$file" "^(internal)[^/]*(class|enum|record|struct) ${name}\b" "$label"
+# ---------------------------------------------------------------------------
+# 3c. Second-order CS0053.
+#
+# Promoting a type can expose a *different* internal type through its own
+# members, and the compiler reports one error per offending pair:
+#
+#   CS0053: property type 'List<Mediainfo>' is less accessible than
+#           property 'OutputFile.Mediainfos'
+#   CS0053: property type 'MuxFormat' is less accessible than
+#           property 'MuxOptions.MuxFormat'
+#
+# Hand-listing these is a losing game: each promotion can reveal another, and
+# the set depends on the pinned upstream commit. Instead, find every top-level
+# internal type in the engine assembly and promote them all. The engine is a
+# library whose types are not part of any public contract, so widening them
+# carries no obligation, and it removes the whole class of CS0053/CS0262 errors
+# at once rather than one build round-trip at a time.
+#
+# Internal *members* are deliberately left alone: widening those is unnecessary
+# and would bloat the public surface.
+# ---------------------------------------------------------------------------
+promote_all_top_level_types() {
+  local n
+  n=$(python3 - "$ENGINE" <<'PYEOF'
+import os, re, sys
+root = sys.argv[1]
+# Only file-scope declarations. Requiring the modifier to start at column zero
+# and a following space excludes nested classes and members.
+pat = re.compile(r'^internal\s+(?:partial\s+|sealed\s+|static\s+|abstract\s+|readonly\s+|ref\s+)*'
+                 r'(class|enum|record|struct)\s+([A-Za-z_][A-Za-z0-9_]*)')
+total = 0
+for dirpath, _, files in os.walk(root):
+    for name in files:
+        if not name.endswith('.cs'):
+            continue
+        path = os.path.join(dirpath, name)
+        with open(path, encoding='utf-8-sig') as fh:
+            lines = fh.read().splitlines(keepends=True)
+        changed = False
+        for i, line in enumerate(lines):
+            m = pat.match(line)
+            if m and m.group(1) in ('class', 'enum', 'record', 'struct'):
+                lines[i] = re.sub(r'\binternal\b', 'public', line, count=1)
+                changed = True
+                total += 1
+        if changed:
+            with open(path, 'w', encoding='utf-8') as fh:
+                fh.writelines(lines)
+print(total)
+PYEOF
+) || { echo "::error::failed to promote engine types"; exit 1; }
+  echo "::notice::promoted $n top-level internal type declaration(s) to public"
+  return 0
 }
 
-for t in DecryptEngine SubtitleFormat OutputFile MuxOptions; do
-  promote_anywhere "$t" "$t"
-done
+promote_all_top_level_types
+
+# Sanity: the tree should now have no top-level internal type declarations left.
+#
+# `|| true` is required, not defensive noise: grep exits 1 when it matches
+# nothing, and under `set -e -o pipefail` that propagates out of the command
+# substitution and kills the script before the verification message is printed.
+# The desired condition here is precisely "grep finds nothing", so its failure
+# status has to be neutralised rather than propagated.
+leftover=$(grep -rhoE '^internal (partial |sealed |static |abstract )*(class|enum|record|struct) ' \
+             --include='*.cs' "$ENGINE" | wc -l || true)
+leftover=${leftover//[^0-9]/}
+if [ "${leftover:-0}" -ne 0 ]; then
+  echo "::error::$leftover top-level internal type(s) remain; expected 0"
+  exit 1
+fi
+echo "::notice::verified no top-level internal types remain in the engine"
 
 # ---------------------------------------------------------------------------
 # 4. Report what the engine now exposes, for review in the run summary.
