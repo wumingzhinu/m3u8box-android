@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">M3U8Box</string>
+
+    <string name="label_url">m3u8 链接</string>
+    <string name="hint_url">https://example.com/video.m3u8</string>
+
+    <string name="label_headers">请求头（每行一个，Name: value）</string>
+    <string name="hint_headers">Referer: https://example.com/\nCookie: session=…</string>
+
+    <string name="label_filename">保存文件名</string>
+    <string name="hint_filename">留空则用链接中的名字</string>
+
+    <string name="action_inspect">解析画质</string>
+    <string name="action_download">开始下载</string>
+
+    <string name="tracks_found">可用轨道</string>
+    <string name="status_idle">填写链接后点「解析画质」</string>
+    <string name="status_inspecting">正在解析…</string>
+    <string name="status_select_track">选择一个画质后即可下载</string>
+    <string name="status_downloading">正在下载…</string>
+</resources>
