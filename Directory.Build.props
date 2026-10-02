@@ -1,28 +1,28 @@
 <Project>
 
   <!--
-    Retarget the cloned upstream tree from net10.0 to net9.0.
+    Secondary safety net for the upstream tree.
 
-    Upstream N_m3u8DL-RE targets net10.0, but .NET for Android is only
-    dependable up to net9.0-android. A Directory.Build.props in the root of a
-    tree applies to every project beneath it, so this overrides
-    third_party/N_m3u8DL-RE without patching a single upstream file.
+    The authoritative retarget is the explicit sed rewrite in
+    scripts/ and the workflow's "Retarget upstream to net9.0" step, which
+    asserts the result. This file exists only so that a developer building the
+    tree by hand, without the workflow, still gets a net9.0 upstream instead of
+    a confusing NETSDK1045.
 
-    Scope is deliberately restricted to the third_party tree. Setting
-    TargetFramework unconditionally here would also clobber our own projects,
-    because Directory.Build.props is imported at the very top of every project
-    file, before the project's own <TargetFramework> is read.
+    Scope is restricted to the third_party tree. Setting TargetFramework
+    unconditionally would clobber our own projects, because Directory.Build.props
+    is imported at the very top of every project file, before the project's own
+    <TargetFramework> is read.
 
-    The condition compares against $(MSBuildThisFileDirectory) (this file's own
-    directory, with a trailing slash) using StartsWith. An earlier attempt used
-    $(MSBuildProjectDirectory).Contains('third_party'), which silently
-    evaluated to false: Contains is not an MSBuild property function, so the
-    condition never matched and upstream stayed on net10.0. MSBuild's built-in
-    string methods are limited to StartsWith/EndsWith/HasExtension, and those
-    do work here.
+    Note on how this was written: the condition originally read
+    $(MSBuildProjectDirectory.Contains('third_party')), which silently never
+    matched because Contains is not an MSBuild property function. A mistyped
+    condition here is indistinguishable from a working one, which is exactly why
+    the workflow asserts the retarget independently rather than trusting this
+    file. StartsWith is used because it *is* an MSBuild string method.
 
-    LangVersion is pinned to 13 to match upstream. 14 enables first-class span
-    overloads, which silently changes method resolution against
+    LangVersion is pinned to 13 to match upstream: 14 enables first-class span
+    overloads, which changes method resolution against
     MemoryExtensions.Contains and can break upstream code that otherwise
     compiles fine.
   -->
