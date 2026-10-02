@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!--
+    Minimal manifest for the feasibility probe.
+
+    The probe is never shipped and never installed; it exists so the Android
+    application targets run and ILCompiler reaches the upstream assemblies. The
+    INTERNET permission is the one thing genuinely needed, because the code
+    paths under test (key fetch, segment download) are HTTP.
+  -->
+  <uses-permission android:name="android.permission.INTERNET" />
+  <application android:label="M3U8Box Probe" android:supportsRtl="true" />
+</manifest>
