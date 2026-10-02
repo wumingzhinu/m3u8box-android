@@ -141,8 +141,6 @@ jobs:
           dotnet publish -c Release \
             -r android-arm64 \
             -p:AndroidPackageFormat=apk \
-            -p:PublishAot=true \
-            -p:AndroidLinkMode=SdkOnly \
             -v normal 2>&1 | tee publish.log
 
       - name: Summarise
