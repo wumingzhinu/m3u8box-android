@@ -9,14 +9,36 @@ namespace M3U8Box.Verify;
 
 /// <summary>
 /// Compile-time and AOT reachability probe.
-///
+/// </summary>
+/// <remarks>
 /// This type exists so the Android AOT compiler is forced to analyse the
 /// upstream types we intend to ship, instead of trimming them as unreachable.
 /// A passing build therefore proves two things: upstream compiles for
 /// net9.0-android, and the AOT compiler can process the resulting IL.
-/// </summary>
+/// </remarks>
 public static class Probe
 {
+    /// <summary>
+    /// Runs every upstream touch point. Called from <see cref="MainActivity"/>
+    /// so the linker sees it as reachable from a real Android entry point.
+    /// </summary>
+    public static void RunAll()
+    {
+        var config = new ParserConfig
+        {
+            Url = "https://example.invalid/probe.m3u8",
+            // A key and an IV make the AES-128 branch of the key processor
+            // resolve entirely offline, so nothing here touches the network
+            // even if a device does run the probe.
+            CustomeKey = new byte[16],
+            CustomeIV = new byte[16],
+        };
+
+        TouchParserSurface(config);
+        _ = SupportedEncryptionMethods();
+        _ = TouchKeyProcessor(config);
+    }
+
     /// <summary>
     /// Enumerates the encryption methods the upstream engine handles.
     ///
@@ -44,8 +66,8 @@ public static class Probe
     /// reimplemented incorrectly elsewhere, so it is the right thing to pin
     /// under AOT.
     ///
-    /// A custom key and IV are supplied via <see cref="ParserConfig"/> so the
-    /// call needs no network access and the AES path is fully exercised.
+    /// A custom key and IV come from <see cref="ParserConfig"/>, so the call
+    /// needs no network access while still exercising the AES path.
     /// </summary>
     public static EncryptInfo TouchKeyProcessor(ParserConfig config)
     {
@@ -54,8 +76,6 @@ public static class Probe
         var processor = new DefaultHLSKeyProcessor();
         _ = processor.CanProcess(ExtractorType.HLS, string.Empty, string.Empty, string.Empty, config);
 
-        // CustomeKey/CustomeIV short-circuit the key download, so this
-        // resolves entirely offline.
         return processor.Process(
             "#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\",IV=0x0123456789ABCDEF0123456789ABCDEF",
             config.Url,
