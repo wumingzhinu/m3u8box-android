@@ -6,16 +6,38 @@ engine.
 
 ## Status
 
-**Feasibility verification stage.** The repository contains only the minimal
-probe that answers one question:
+**Feasibility verification stage.** The repository contains a compile probe that
+answers one question:
 
-> Can `N_m3u8DL-RE.Common` + `N_m3u8DL-RE.Parser` be compiled and packaged for
+> Can the N_m3u8DL-RE engine be consumed as a library and packaged for
 > `net9.0-android`?
 
-Answered: yes, once upstream is retargeted to `net9.0`. See "Findings" below for
-what the probe established, including the one thing that does not work.
+Answered: **yes.** The engine compiles, is reachable from the app assembly, and
+produces a signed arm64 APK. See "Findings" for how, and for the two things that
+do not work.
 
-Nothing else is implemented yet. Do not expect a working app from this tree.
+## App status
+
+`src/M3U8Box.App` is a working single-screen app: enter an m3u8 URL plus request
+headers, tap 解析画质 to list tracks, pick one, tap 开始下载. Output lands in the
+app's external files dir under `downloads/`.
+
+The `verify/Probe` project still has no UI by design. It exists to guard the
+upstream rewrite, not to be used.
+
+Not yet implemented: task queue, history persistence, foreground service, and
+export to the shared MediaStore. Downloads run in the Activity, so rotating the
+screen or backgrounding the app can interrupt them.
+
+## Platform notes for the app
+
+- **No ffmpeg.** `BinaryMerge` is forced, which concatenates already-decrypted
+  segments. `MuxAfterDone` would shell out to ffmpeg and is never enabled.
+- **No native AOT.** ILCompiler has no Android target on the .NET 9 band, so the
+  Mono runtime ships in the APK. This is most of the package size.
+- **Logging.** The engine logs through Spectre.Console, which needs a terminal.
+  `Core/AndroidLog.cs` bridges it to logcat; without that the first download
+  would fail at runtime while building perfectly.
 
 ## Layout
 
@@ -58,6 +80,18 @@ Established by the probe, in the order they were hit:
 4. **`AndroidApplication=true` is mandatory**, not optional. Only the Android
    application targets populate `PrivateSdkAssemblies`, and without them
    ILCompiler fails with a message that does not mention the real cause.
+5. **The engine is an `Exe` full of `internal` types**, so it cannot be
+   referenced as shipped. `scripts/prepare-upstream.sh` rewrites it: Library
+   output type, System.CommandLine severed, CLI front end deleted, and
+   accessibility widened. Two consequences worth knowing:
+   - Promoting `MyOption` exposed its property types (CS0053), and promoting
+     those exposed *their* types, one build at a time. All top-level engine
+     types are now promoted in a single pass, because enumerating them by hand
+     is a losing game that depends on the pinned commit.
+   - `SimpleDownloadManager` is split across two files; both partials must be
+     promoted or CS0262.
+   - `MyOption` carries ~70 `<see cref="CommandInvoker.X"/>` doc comments that
+     dangle once the CLI is deleted, and are rewritten to self-references.
 
 Remaining risks, not yet tested:
 
