@@ -201,3 +201,84 @@ jobs:
           path: verify/Probe/bin/Release/net9.0-android/*/publish/*.apk
           if-no-files-found: warn
           retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # The app itself. Separate job so a failure here is clearly separated from a
+  # regression in the upstream rewrite, which the probe job guards.
+  # ---------------------------------------------------------------------------
+  app:
+    name: app APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: probe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Clone N_m3u8DL-RE at pinned commit
+        run: |
+          PIN=$(grep -oE '[0-9a-f]{40}' .nre-pin)
+          git clone --filter=blob:none --no-checkout "${{ env.NRE_REPO }}" third_party/N_m3u8DL-RE
+          git -C third_party/N_m3u8DL-RE fetch --depth 1 origin "$PIN"
+          git -C third_party/N_m3u8DL-RE checkout --detach "$PIN"
+
+      - name: Retarget upstream to net9.0
+        run: |
+          set -euo pipefail
+          count=0
+          for csproj in third_party/N_m3u8DL-RE/src/*/*.csproj; do
+            [ -e "$csproj" ] || continue
+            if grep -q '<TargetFramework>net10.0</TargetFramework>' "$csproj"; then
+              sed -i 's|<TargetFramework>net10.0</TargetFramework>|<TargetFramework>net9.0</TargetFramework>|' "$csproj"
+              echo "retargeted $(basename "$csproj")"
+              count=$((count + 1))
+            fi
+          done
+          [ "$count" -gt 0 ] || { echo "::error::no upstream project retargeted"; exit 1; }
+
+      - name: Prepare upstream engine for library use
+        run: ./scripts/prepare-upstream.sh
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Install Android workload
+        run: dotnet workload install android
+
+      - name: Build app
+        working-directory: src/M3U8Box.App
+        run: |
+          set -o pipefail
+          dotnet build -c Release -v normal 2>&1 | tee build.log
+
+      - name: Publish app APK
+        working-directory: src/M3U8Box.App
+        run: |
+          set -o pipefail
+          # No key store: the SDK's debug key signs the release build, which
+          # is enough to install and verify. A real release would supply a
+          # keystore from the repository secrets.
+          dotnet publish -c Release \
+            -p:AndroidPackageFormat=apk \
+            -v normal 2>&1 | tee publish.log
+
+      - name: Upload app build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-logs
+          path: src/M3U8Box.App/build.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload app APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-apk
+          path: src/M3U8Box.App/bin/Release/net9.0-android/*/publish/*.apk
+          if-no-files-found: error
+          retention-days: 30
