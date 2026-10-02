@@ -15,7 +15,7 @@ namespace M3U8Box.Verify;
 /// _ComputeAssembliesToCompileToNative", because only the application targets
 /// populate that group.
 /// </remarks>
-[Activity(Label = "M3U8Box Probe", MainLauncher = true)]
+[Activity(Label = "M3U8Box PROBE (not the app)", MainLauncher = true)]
 public class MainActivity : Activity
 {
     protected override void OnCreate(Bundle? savedInstanceState)
