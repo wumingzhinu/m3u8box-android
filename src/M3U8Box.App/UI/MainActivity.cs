@@ -44,15 +44,49 @@ public class MainActivity : Activity
     /// <summary>True while a long operation is in flight, to gate the buttons.</summary>
     private bool _busy;
 
+    /// <summary>
+    /// Show a crash on screen rather than letting Android kill the process.
+    /// </summary>
+    /// <remarks>
+    /// Without this, a failure in the engine's code path terminates the app and
+    /// the user sees the launcher again, which is indistinguishable from the app
+    /// simply not having started.
+    /// </remarks>
+    private void InstallCrashHandler()
+    {
+        AndroidEnvironment.UnhandledExceptionRaiser += (_, e) =>
+        {
+            try
+            {
+                AndroidLog.UserError("未捕获异常", e.Exception);
+                RunOnUiThread(() =>
+                {
+                    _log?.AppendLine($"未捕获异常: {e.Exception}");
+                    _status?.Text = $"错误: {e.Exception.GetType().Name}: {e.Exception.Message}";
+                });
+            }
+            catch
+            {
+                // Nothing left to do; let the runtime handle it.
+            }
+            finally
+            {
+                // Keep the process alive so the message is actually readable.
+                e.Handled = true;
+            }
+        };
+    }
+
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
 
-        // Must happen before any engine code runs. The engine logs through
-        // Spectre.Console, which assumes a terminal; without this bridge the
-        // first download would hit a rendering failure.
-        AndroidLog.Initialize();
+        InstallCrashHandler();
 
+        // Set the view first. Logging setup and directory creation are both
+        // fallible on Android, and doing them before the content view meant a
+        // failure in either left the user with a blank screen and no clue. Now a
+        // problem is reported on-screen instead.
         SetContentView(Resource.Layout.activity_main);
 
         _urlInput = FindViewById<EditText>(Resource.Id.inputUrl)!;
@@ -66,25 +100,52 @@ public class MainActivity : Activity
         _status = FindViewById<TextView>(Resource.Id.textStatus)!;
         _log = FindViewById<TextView>(Resource.Id.textLog)!;
 
-        // External files dir: writable without permission, and no more
-        // Environment.ProcessPath, which is null on Android.
-        var workDir = Path.Combine(CacheDir?.AbsolutePath ?? ".", "work");
-        var outputDir = Path.Combine(
-            GetExternalFilesDir(null)?.AbsolutePath ?? FilesDir?.AbsolutePath ?? ".",
-            "downloads");
-        Directory.CreateDirectory(workDir);
-        Directory.CreateDirectory(outputDir);
+        SetStatus(GetString(Resource.String.status_idle));
 
-        _engine = new DownloadEngine(workDir, outputDir);
+        // The engine logs through Spectre.Console, which assumes a terminal;
+        // without this bridge the first download would fail at runtime while
+        // building perfectly.
+        AndroidLog.Initialize();
+        if (AndroidLog.InitError is { } initError)
+        {
+            AppendLog($"警告: 日志桥接失败 ({initError.GetType().Name}: {initError.Message})");
+        }
+
+        try
+        {
+            // External files dir: writable without permission, and avoids
+            // Environment.ProcessPath, which is null on Android.
+            var workDir = Path.Combine(CacheDir?.AbsolutePath ?? ".", "work");
+            var outputDir = Path.Combine(
+                GetExternalFilesDir(null)?.AbsolutePath ?? FilesDir?.AbsolutePath ?? ".",
+                "downloads");
+            Directory.CreateDirectory(workDir);
+            Directory.CreateDirectory(outputDir);
+
+            _engine = new DownloadEngine(workDir, outputDir);
+        }
+        catch (Exception ex)
+        {
+            _engine = null!;
+            AppendLog($"初始化存储失败: {ex.Message}");
+            _inspectButton.Enabled = false;
+            SetStatus($"初始化失败: {ex.Message}");
+            return;
+        }
 
         _inspectButton.Click += async (_, _) => await InspectAsync();
         _downloadButton.Click += async (_, _) => await DownloadAsync();
-
-        SetStatus(GetString(Resource.String.status_idle));
     }
 
     private async Task InspectAsync()
     {
+        // _engine is null when storage initialisation failed in OnCreate.
+        if (_engine is null)
+        {
+            AppendLog("引擎未初始化，无法解析");
+            return;
+        }
+
         var url = _urlInput.Text?.Trim() ?? string.Empty;
         if (url.Length == 0)
         {
@@ -172,8 +233,9 @@ public class MainActivity : Activity
 
     private async Task DownloadAsync()
     {
-        if (_selection is null)
+        if (_engine is null || _selection is null)
         {
+            AppendLog("没有可下载的任务");
             return;
         }
 
