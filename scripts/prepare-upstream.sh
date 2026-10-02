@@ -175,8 +175,8 @@ PYEOF
   if grep -qE '\^internal|public public|public internal|public \^' "$file"; then
     die "$label: malformed result in $file (caret, doubled, or 'public internal' modifier)"
   fi
-  if ! grep -qE '^\s*public (partial |static |sealed |abstract )*class' "$file"; then
-    die "$label: $file has no top-level 'public class' after rewrite"
+  if ! grep -qE '^\s*public (partial |static |sealed |abstract |readonly |ref )*(class|enum|record|struct)\b' "$file"; then
+    die "$label: $file has no top-level public type declaration after rewrite"
   fi
   note "$label: promoted $count declaration(s) to public"
 }
@@ -212,6 +212,47 @@ if [ -f "${ENGINE}/DownloadManager/SimpleLiveRecordManager2.cs" ]; then
   promote "${ENGINE}/DownloadManager/SimpleLiveRecordManager2.cs" \
     '^internal .*class SimpleLiveRecordManager2' 'SimpleLiveRecordManager2' || true
 fi
+
+# SimpleDownloadManager is split across two files. Both partial declarations
+# must agree on accessibility or the build fails with CS0262 ("Partial
+# declarations ... have conflicting accessibility modifiers"). Promoting only
+# the first one is exactly the kind of half-done rewrite that produces an error
+# pointing at the wrong file.
+promote "${ENGINE}/DownloadManager/SimpleDownloadManager.Parts.cs" \
+  '^internal partial class SimpleDownloadManager' 'SimpleDownloadManager.Parts' || true
+
+# ---------------------------------------------------------------------------
+# 3b. Types reachable through a public member's signature.
+#
+# Making MyOption public exposes its properties, and C# requires a public
+# member's type to be at least as accessible (CS0053). The property types that
+# live in the engine assembly are therefore all internal upstream:
+#
+#   error CS0053: property type 'DecryptEngine' is less accessible than
+#                 property 'MyOption.DecryptionEngine'
+#   error CS0053: property type 'MuxOptions' is less accessible than
+#                 property 'MyOption.MuxOptions'
+#   error CS0053: property type 'List<OutputFile>' ...
+#   error CS0053: property type 'SubtitleFormat' ...
+#
+# LogLevel, CustomHlsScope, and EncryptMethod need no change: they already live
+# in N_m3u8DL-RE.Common and are public.
+# ---------------------------------------------------------------------------
+promote_anywhere() {
+  local name="$1" label="$2"
+  local file
+  file=$(grep -rlE "^(internal|public)[^/]*(class|enum|record|struct) ${name}\b" \
+           --include='*.cs' "${ENGINE}" 2>/dev/null | head -1)
+  if [ -z "$file" ]; then
+    die "$label: could not locate type $name under ${ENGINE}"
+    return
+  fi
+  promote "$file" "^(internal)[^/]*(class|enum|record|struct) ${name}\b" "$label"
+}
+
+for t in DecryptEngine SubtitleFormat OutputFile MuxOptions; do
+  promote_anywhere "$t" "$t"
+done
 
 # ---------------------------------------------------------------------------
 # 4. Report what the engine now exposes, for review in the run summary.
