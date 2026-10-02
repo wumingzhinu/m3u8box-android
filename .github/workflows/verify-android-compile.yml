@@ -134,7 +134,7 @@ jobs:
       # A plain build is not sufficient evidence for an AOT claim: it does not
       # run the ILCompiler pass that actually trips on unsupported patterns and
       # trimming. The probe therefore publishes, which drives the AOT step.
-      - name: Publish probe with AOT
+      - name: Publish probe APK (Mono runtime, no AOT)
         working-directory: verify/Probe
         run: |
           set -o pipefail
