@@ -6,22 +6,45 @@
 
       A library does not produce a native entry point, so ILCompiler emits no
       .so and the publish step fails with MSB3030 ("Could not copy Probe.so").
-      Making the probe an executable is what actually exercises the AOT
-      compiler over the upstream assemblies; a library build compiles but never
-      reaches the code-generation pass, so it proves less than it appears to.
+      A library build compiles but never reaches the code-generation pass, so it
+      proves less than it appears to.
 
-      A minimal Main is supplied so the app is a real executable. It does not
-      run during CI; it exists so the linker and ILCompiler both treat the
-      upstream types as reachable.
+      Reachability comes from MainActivity calling Probe.RunAll.
     -->
     <TargetFramework>net9.0-android</TargetFramework>
     <SupportedOSPlatformVersion>21</SupportedOSPlatformVersion>
     <OutputType>Exe</OutputType>
+
+    <!--
+      Required, and the reason is not obvious. Without this the project is a
+      plain .NET library-shaped project, and ILCompiler fails with:
+
+        error : The PrivateSdkAssemblies ItemGroup is required for
+                _ComputeAssembliesToCompileToNative
+
+      PrivateSdkAssemblies is populated only by the Android *application*
+      targets. Setting OutputType=Exe alone is not enough; the project has to be
+      an Android app. Pinning the SDK band (global.json) was tried first on the
+      theory that a 10.x SDK paired with a 9.x ILCompiler caused it, and that
+      theory was wrong: the error survived SDK 9.0.318 with ILCompiler 9.0.20.
+    -->
+    <AndroidApplication>true</AndroidApplication>
+
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationId>com.wumingzhinu.m3u8box.probe</ApplicationId>
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+
+    <!--
+      AOT lives here rather than on the publish command line so `dotnet build`
+      exercises the same configuration as `dotnet publish`. The probe's whole
+      purpose is to prove the native compile works, and passing -p:PublishAot
+      only to the publish step would let Build go green while AOT was never
+      attempted.
+    -->
+    <PublishAot>true</PublishAot>
+    <AndroidLinkMode>SdkOnly</AndroidLinkMode>
 
     <!-- Android has no terminal, so Spectre.Console cannot render. Upstream
          routes all logging through it, so probe against the Android-safe
