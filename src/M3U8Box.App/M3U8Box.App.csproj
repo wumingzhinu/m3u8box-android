@@ -10,7 +10,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationId>com.wumingzhinu.m3u8box</ApplicationId>
     <ApplicationVersion>1</ApplicationVersion>
-    <ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
+    <ApplicationDisplayVersion>1.0.0-app</ApplicationDisplayVersion>
 
     <!--
       Native AOT stays off. ILCompiler on the .NET 9 band has no Android target
