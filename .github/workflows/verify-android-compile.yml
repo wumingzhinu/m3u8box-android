@@ -272,7 +272,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-logs
-          path: src/M3U8Box.App/build.log
+          path: |
+            src/M3U8Box.App/build.log
+            src/M3U8Box.App/publish.log
           if-no-files-found: ignore
           retention-days: 14
 
@@ -281,6 +283,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-apk
-          path: src/M3U8Box.App/bin/Release/net9.0-android/*/publish/*.apk
+          # Both layouts occur depending on the workload version: a
+          # RID-scoped publish dir, and a flat one directly under the TFM.
+          # Globbing both avoids a green build reported as a failed upload.
+          path: |
+            src/M3U8Box.App/bin/Release/net9.0-android/*/publish/*.apk
+            src/M3U8Box.App/bin/Release/net9.0-android/publish/*.apk
+            src/M3U8Box.App/bin/Release/net9.0-android/*.apk
           if-no-files-found: error
           retention-days: 30
