@@ -62,18 +62,21 @@ public class MainActivity : Activity
                 AndroidLog.UserError("未捕获异常", e.Exception);
                 RunOnUiThread(() =>
                 {
-                    _log?.AppendLine($"未捕获异常: {e.Exception}");
-                    _status?.Text = $"错误: {e.Exception.GetType().Name}: {e.Exception.Message}";
+                    // TextView has no AppendLine; set Text instead.
+                    if (_log is not null)
+                    {
+                        _log.Text = _log.Text + $"\n未捕获异常: {e.Exception}";
+                    }
+
+                    if (_status is not null)
+                    {
+                        _status.Text = $"错误: {e.Exception.GetType().Name}: {e.Exception.Message}";
+                    }
                 });
             }
             catch
             {
                 // Nothing left to do; let the runtime handle it.
-            }
-            finally
-            {
-                // Keep the process alive so the message is actually readable.
-                e.Handled = true;
             }
         };
     }
