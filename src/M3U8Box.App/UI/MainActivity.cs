@@ -185,7 +185,11 @@ public class MainActivity : Activity
         }
 
         var button = _trackGroup.FindViewById<RadioButton>(checkedId);
-        var trackIndex = button?.Tag is int i ? i : -1;
+
+        // Tag is Java.Lang.Object, not int: assigning a boxed int and matching it
+        // with `is int` does not compile (CS8121). Java.Lang.Integer is the type
+        // the binding actually produces, and .IntValue() unwraps it.
+        var trackIndex = (button?.Tag as Java.Lang.Integer)?.IntValue() ?? -1;
         var track = _selection.Tracks.FirstOrDefault(t => t.Index == trackIndex);
         if (track is null)
         {
